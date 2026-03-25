@@ -48,6 +48,22 @@ Tenant status is persisted in `Tenant.metadata.platformStatus`:
 
 When tenant status is `SUSPENDED`, standard tenant users are blocked at auth middleware level for protected routes.
 
+### Persistent Audit Trail
+
+Super-admin governance writes are now persisted to `PlatformAuditLog` (table: `platform_audit_logs`) for immutable platform audit history.
+
+Currently logged events include:
+
+- `TENANT_STATUS_UPDATED`
+- `TENANT_USER_STATUS_UPDATED`
+
+These events are included in:
+
+- `GET /api/super-admin/audits/activity`
+- `GET /api/super-admin/tenants/:tenantId/audits/activity`
+
+After pulling this branch, run a Prisma migration to create the table.
+
 ## Multi-Tenancy Notes
 
 - Tenant-specific API endpoints derive tenant from JWT claim (not request payload/query).

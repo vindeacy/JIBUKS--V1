@@ -8,6 +8,37 @@ const router = express.Router();
 router.use(verifyJWT);
 router.use(requireSuperAdmin);
 
+async function logPlatformAudit({
+  tenantId = null,
+  actorUserId = null,
+  action,
+  entityType,
+  entityId = null,
+  reason = null,
+  oldValue = null,
+  newValue = null,
+  metadata = null,
+}) {
+  try {
+    await prisma.platformAuditLog.create({
+      data: {
+        tenantId,
+        actorUserId,
+        action,
+        entityType,
+        entityId,
+        reason,
+        oldValue,
+        newValue,
+        metadata,
+      },
+    });
+  } catch (error) {
+    // Do not block core operation if audit insert fails
+    console.error('Platform audit log write failed:', error);
+  }
+}
+
 router.get('/me', async (req, res) => {
   try {
     const user = await prisma.user.findUnique({
@@ -286,6 +317,26 @@ router.patch('/tenants/:tenantId/users/:userId/status', async (req, res) => {
       },
     });
 
+    await logPlatformAudit({
+      tenantId,
+      actorUserId: req.user?.id ?? null,
+      action: 'TENANT_USER_STATUS_UPDATED',
+      entityType: 'USER',
+      entityId: String(userId),
+      reason: req.body?.reason || null,
+      oldValue: {
+        isActive: user.isActive,
+        role: user.role,
+      },
+      newValue: {
+        isActive: updated.isActive,
+        role: updated.role,
+      },
+      metadata: {
+        actorEmail: req.user?.email || null,
+      },
+    });
+
     res.json({ message: 'User status updated', user: updated });
   } catch (error) {
     console.error('Error updating tenant user status (super admin):', error);
@@ -308,6 +359,7 @@ router.patch('/tenants/:tenantId/status', async (req, res) => {
     if (!tenant) return res.status(404).json({ error: 'Tenant not found' });
 
     const existingMetadata = tenant.metadata && typeof tenant.metadata === 'object' ? tenant.metadata : {};
+    const previousStatus = existingMetadata.platformStatus || 'ACTIVE';
     const updatedMetadata = {
       ...existingMetadata,
       platformStatus: status,
@@ -320,6 +372,24 @@ router.patch('/tenants/:tenantId/status', async (req, res) => {
       where: { id: tenantId },
       data: { metadata: updatedMetadata },
       select: { id: true, name: true, slug: true, tenantType: true, metadata: true, updatedAt: true },
+    });
+
+    await logPlatformAudit({
+      tenantId,
+      actorUserId: req.user?.id ?? null,
+      action: 'TENANT_STATUS_UPDATED',
+      entityType: 'TENANT',
+      entityId: String(tenantId),
+      reason: note || null,
+      oldValue: {
+        platformStatus: previousStatus,
+      },
+      newValue: {
+        platformStatus: status,
+      },
+      metadata: {
+        actorEmail: req.user?.email || null,
+      },
     });
 
     res.json({ message: 'Tenant platform status updated', tenant: updated });
@@ -448,7 +518,7 @@ router.get('/tenants/:tenantId/audits/activity', async (req, res) => {
 
     const limit = Math.min(parseInt(req.query.limit, 10) || 100, 500);
 
-    const [journals, stockMovements, bankTransactions] = await Promise.all([
+    const [journals, stockMovements, bankTransactions, platformAudits] = await Promise.all([
       prisma.journal.findMany({
         where: { tenantId },
         select: {
@@ -489,6 +559,11 @@ router.get('/tenants/:tenantId/audits/activity', async (req, res) => {
         orderBy: { createdAt: 'desc' },
         take: limit,
       }),
+      prisma.platformAuditLog.findMany({
+        where: { tenantId },
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+      }),
     ]);
 
     const normalized = [
@@ -518,6 +593,15 @@ router.get('/tenants/:tenantId/audits/activity', async (req, res) => {
         summary: `${b.type} ${Number(b.amount)}`,
         reference: b.reference,
         payload: b,
+      })),
+      ...platformAudits.map((a) => ({
+        source: 'PLATFORM_AUDIT',
+        id: a.id,
+        tenantId: a.tenantId,
+        timestamp: a.createdAt,
+        summary: a.action,
+        reference: a.entityId,
+        payload: a,
       })),
     ]
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
@@ -655,7 +739,7 @@ router.get('/audits/activity', async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit, 10) || 100, 500);
 
-    const [journals, stockMovements, bankTransactions] = await Promise.all([
+    const [journals, stockMovements, bankTransactions, platformAudits] = await Promise.all([
       prisma.journal.findMany({
         select: {
           id: true,
@@ -693,6 +777,10 @@ router.get('/audits/activity', async (req, res) => {
         orderBy: { createdAt: 'desc' },
         take: limit,
       }),
+      prisma.platformAuditLog.findMany({
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+      }),
     ]);
 
     const normalized = [
@@ -722,6 +810,15 @@ router.get('/audits/activity', async (req, res) => {
         summary: `${b.type} ${Number(b.amount)}`,
         reference: b.reference,
         payload: b,
+      })),
+      ...platformAudits.map((a) => ({
+        source: 'PLATFORM_AUDIT',
+        id: a.id,
+        tenantId: a.tenantId,
+        timestamp: a.createdAt,
+        summary: a.action,
+        reference: a.entityId,
+        payload: a,
       })),
     ]
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())

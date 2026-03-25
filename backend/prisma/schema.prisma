@@ -1221,3 +1221,28 @@ model LoanTransaction {
   @@index([loanId])
   @@map("loan_transactions")
 }
+
+// ============================================
+// PLATFORM AUDIT LOGS (Super Admin / Multi-Tenant Governance)
+// ============================================
+
+model PlatformAuditLog {
+  id          Int      @id @default(autoincrement())
+  tenantId    Int?     @map("tenant_id")
+  actorUserId Int?     @map("actor_user_id")
+  action      String   // TENANT_STATUS_UPDATED, TENANT_USER_STATUS_UPDATED, etc.
+  entityType  String   @map("entity_type") // TENANT, USER, CONFIG
+  entityId    String?  @map("entity_id")
+  reason      String?
+  oldValue    Json?    @map("old_value")
+  newValue    Json?    @map("new_value")
+  metadata    Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId])
+  @@index([actorUserId])
+  @@index([action])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("platform_audit_logs")
+}

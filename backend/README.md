@@ -1,3 +1,4 @@
+-- Active: 1759839836649@@localhost@5432@APP
 # JIBUKS Backend
 
 Node.js + Express backend for the JIBUKS mobile app.
