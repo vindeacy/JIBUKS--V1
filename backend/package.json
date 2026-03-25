@@ -15,7 +15,8 @@
     "seed:equity": "node scripts/seed_equity.js",
     "seed:revenue": "node scripts/seed_revenue.js",
     "seed:expenses": "node scripts/seed_expenses.js",
-    "seed:suppliers": "node scripts/seed_kenyan_suppliers.js"
+    "seed:suppliers": "node scripts/seed_kenyan_suppliers.js",
+    "superadmin:grant": "node scripts/make_super_admin.js"
   },
   "dependencies": {
     "@prisma/client": "^6.19.2",

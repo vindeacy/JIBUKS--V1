@@ -1,8 +1,10 @@
 import express from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma.js';
+import { verifyJWT } from '../middleware/auth.js';
 
 const router = express.Router();
-const prisma = new PrismaClient();
+
+router.use(verifyJWT);
 
 // ============================================
 // CHEQUE MANAGEMENT ROUTES
@@ -16,15 +18,15 @@ const prisma = new PrismaClient();
  */
 router.get('/pending', async (req, res) => {
     try {
-        const { tenantId } = req.query;
+        const tenantId = req.user?.tenantId;
 
         if (!tenantId) {
-            return res.status(400).json({ error: 'tenantId is required' });
+            return res.status(400).json({ error: 'User is not part of any tenant' });
         }
 
         const cheques = await prisma.cheque.findMany({
             where: {
-                tenantId: parseInt(tenantId),
+                tenantId,
                 status: 'PENDING',
             },
             orderBy: {
@@ -45,15 +47,15 @@ router.get('/pending', async (req, res) => {
  */
 router.get('/all', async (req, res) => {
     try {
-        const { tenantId } = req.query;
+        const tenantId = req.user?.tenantId;
 
         if (!tenantId) {
-            return res.status(400).json({ error: 'tenantId is required' });
+            return res.status(400).json({ error: 'User is not part of any tenant' });
         }
 
         const cheques = await prisma.cheque.findMany({
             where: {
-                tenantId: parseInt(tenantId),
+                tenantId,
             },
             orderBy: [
                 { status: 'asc' }, // Pending first
@@ -75,16 +77,16 @@ router.get('/all', async (req, res) => {
  */
 router.get('/summary', async (req, res) => {
     try {
-        const { tenantId } = req.query;
+        const tenantId = req.user?.tenantId;
 
         if (!tenantId) {
-            return res.status(400).json({ error: 'tenantId is required' });
+            return res.status(400).json({ error: 'User is not part of any tenant' });
         }
 
         // Get pending cheques
         const pendingCheques = await prisma.cheque.findMany({
             where: {
-                tenantId: parseInt(tenantId),
+                tenantId,
                 status: 'PENDING',
             },
         });
@@ -98,7 +100,7 @@ router.get('/summary', async (req, res) => {
         // Get bank balance (sum of all cash/bank accounts)
         const bankAccounts = await prisma.account.findMany({
             where: {
-                tenantId: parseInt(tenantId),
+                tenantId,
                 isPaymentEligible: true,
                 isActive: true,
             },
@@ -138,8 +140,8 @@ router.get('/summary', async (req, res) => {
  */
 router.post('/create', async (req, res) => {
     try {
+        const tenantId = req.user?.tenantId;
         const {
-            tenantId,
             chequeNumber,
             payee,
             amount,
@@ -154,14 +156,14 @@ router.post('/create', async (req, res) => {
         // Validation
         if (!tenantId || !chequeNumber || !payee || !amount || !dueDate || !bankAccountId) {
             return res.status(400).json({
-                error: 'Missing required fields: tenantId, chequeNumber, payee, amount, dueDate, bankAccountId',
+                error: 'Missing required fields: chequeNumber, payee, amount, dueDate, bankAccountId',
             });
         }
 
         // Create the cheque record
         const cheque = await prisma.cheque.create({
             data: {
-                tenantId: parseInt(tenantId),
+                tenantId,
                 chequeNumber,
                 payee,
                 amount: parseFloat(amount),
@@ -194,7 +196,12 @@ router.post('/create', async (req, res) => {
 router.post('/:id/clear', async (req, res) => {
     try {
         const { id } = req.params;
-        const { dateCleared, clearedById, tenantId } = req.body;
+        const { dateCleared, clearedById } = req.body;
+        const tenantId = req.user?.tenantId;
+
+        if (!tenantId) {
+            return res.status(400).json({ error: 'User is not part of any tenant' });
+        }
 
         if (!dateCleared) {
             return res.status(400).json({ error: 'dateCleared is required' });
@@ -207,6 +214,10 @@ router.post('/:id/clear', async (req, res) => {
 
         if (!cheque) {
             return res.status(404).json({ error: 'Cheque not found' });
+        }
+
+        if (cheque.tenantId !== tenantId) {
+            return res.status(403).json({ error: 'Access denied for this cheque' });
         }
 
         if (cheque.status !== 'PENDING') {
@@ -293,6 +304,11 @@ router.post('/:id/void', async (req, res) => {
     try {
         const { id } = req.params;
         const { reason } = req.body;
+        const tenantId = req.user?.tenantId;
+
+        if (!tenantId) {
+            return res.status(400).json({ error: 'User is not part of any tenant' });
+        }
 
         // Get the cheque
         const cheque = await prisma.cheque.findUnique({
@@ -301,6 +317,10 @@ router.post('/:id/void', async (req, res) => {
 
         if (!cheque) {
             return res.status(404).json({ error: 'Cheque not found' });
+        }
+
+        if (cheque.tenantId !== tenantId) {
+            return res.status(403).json({ error: 'Access denied for this cheque' });
         }
 
         if (cheque.status !== 'PENDING') {
@@ -333,9 +353,14 @@ router.post('/:id/void', async (req, res) => {
 router.get('/:id', async (req, res) => {
     try {
         const { id } = req.params;
+        const tenantId = req.user?.tenantId;
 
-        const cheque = await prisma.cheque.findUnique({
-            where: { id: parseInt(id) },
+        if (!tenantId) {
+            return res.status(400).json({ error: 'User is not part of any tenant' });
+        }
+
+        const cheque = await prisma.cheque.findFirst({
+            where: { id: parseInt(id), tenantId },
         });
 
         if (!cheque) {
