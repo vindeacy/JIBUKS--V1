@@ -8,6 +8,101 @@ const router = express.Router();
 router.use(verifyJWT);
 router.use(requireSuperAdmin);
 
+router.get('/me', async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        tenantId: true,
+        permissions: true,
+      },
+    });
+
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    res.json({
+      user,
+      scopes: {
+        canManageTenants: true,
+        canViewGlobalAnalytics: true,
+        canViewCompliance: true,
+        canViewAudit: true,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching super admin profile:', error);
+    res.status(500).json({ error: 'Failed to fetch super admin profile' });
+  }
+});
+
+router.get('/dashboard', async (req, res) => {
+  try {
+    const startDate = req.query.startDate
+      ? new Date(String(req.query.startDate))
+      : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    const endDate = req.query.endDate ? new Date(String(req.query.endDate)) : new Date();
+
+    const [
+      tenantCounts,
+      userCount,
+      txAgg,
+      invoiceAgg,
+      journalsCount,
+      suspendedTenants,
+    ] = await Promise.all([
+      prisma.tenant.groupBy({ by: ['tenantType'], _count: { id: true } }),
+      prisma.user.count({ where: { isActive: true } }),
+      prisma.transaction.aggregate({
+        where: { date: { gte: startDate, lte: endDate } },
+        _sum: { amount: true },
+        _count: { id: true },
+      }),
+      prisma.invoice.aggregate({
+        where: { createdAt: { gte: startDate, lte: endDate } },
+        _sum: { total: true },
+        _count: { id: true },
+      }),
+      prisma.journal.count({ where: { date: { gte: startDate, lte: endDate } } }),
+      prisma.tenant.count({
+        where: {
+          metadata: {
+            path: ['platformStatus'],
+            equals: 'SUSPENDED',
+          },
+        },
+      }),
+    ]);
+
+    const byType = tenantCounts.reduce((acc, row) => {
+      acc[row.tenantType] = row._count.id;
+      return acc;
+    }, {});
+
+    res.json({
+      period: { startDate, endDate },
+      cards: {
+        totalTenants: tenantCounts.reduce((a, c) => a + c._count.id, 0),
+        familyTenants: byType.FAMILY || 0,
+        businessTenants: byType.BUSINESS || 0,
+        activeUsers: userCount,
+        suspendedTenants,
+        transactionsCount: txAgg._count.id || 0,
+        transactionsVolume: Number(txAgg._sum.amount || 0),
+        invoicesCount: invoiceAgg._count.id || 0,
+        invoicesVolume: Number(invoiceAgg._sum.total || 0),
+        journalsCount,
+      },
+    });
+  } catch (error) {
+    console.error('Error loading super admin dashboard:', error);
+    res.status(500).json({ error: 'Failed to load super admin dashboard' });
+  }
+});
+
 router.get('/tenants', async (req, res) => {
   try {
     const { search, tenantType, limit = 50, offset = 0 } = req.query;

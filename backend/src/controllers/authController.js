@@ -10,6 +10,7 @@ import {
   seedVATRates,
   seedDefaultSuppliers
 } from '../services/accountingService.js';
+import { isSuperAdminUser } from '../middleware/superAdmin.js';
 import crypto from 'crypto';
 
 // Use lower salt rounds in development for faster login
@@ -43,6 +44,7 @@ async function login(req, res, next) {
 
     const accessToken = generateToken(user);
     const refreshToken = generateRefreshToken(user);
+    const isSuperAdmin = await isSuperAdminUser(user);
 
     let tenantType = null;
     if (user.tenantId) {
@@ -66,6 +68,7 @@ async function login(req, res, next) {
         tenantId: user.tenantId,
         role: user.role,
         tenantType,
+        isSuperAdmin,
       },
     });
   } catch (err) {
@@ -196,6 +199,7 @@ async function register(req, res, next) {
     // Generate tokens
     const accessToken = generateToken(user);
     const refreshToken = generateRefreshToken(user);
+    const isSuperAdmin = await isSuperAdminUser(user);
 
     res.status(201).json({
       accessToken,
@@ -207,6 +211,7 @@ async function register(req, res, next) {
         tenantId: user.tenantId,
         role: user.role,
         tenantType: tenant.tenantType,
+        isSuperAdmin,
       },
     });
   } catch (err) {
@@ -280,8 +285,9 @@ async function getCurrentUser(req, res, next) {
       return res.status(404).json({ error: 'User not found' });
     }
 
+    const isSuperAdmin = await isSuperAdminUser(user);
     const { tenant, ...rest } = user;
-    res.json({ ...rest, tenantType: tenant?.tenantType ?? null });
+    res.json({ ...rest, tenantType: tenant?.tenantType ?? null, isSuperAdmin });
   } catch (err) {
     next(err);
   }

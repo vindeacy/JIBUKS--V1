@@ -2,6 +2,8 @@
 
 This backend now exposes a dedicated super-admin API namespace:
 
+- `GET /api/super-admin/me`
+- `GET /api/super-admin/dashboard`
 - `GET /api/super-admin/tenants`
 - `GET /api/super-admin/tenants/:tenantId`
 - `GET /api/super-admin/tenants/:tenantId/users`
@@ -26,6 +28,15 @@ Super-admin is granted by any of the following:
 - Email appears in `SUPER_ADMIN_EMAILS` env var (comma-separated)
 - User role is `ADMIN` and user has no tenant (`tenantId = null`)
 - User JSON `permissions` contains `superAdmin: true` or `canManageTenants: true`
+
+## Bootstrapping Super Admin Web
+
+Use this sequence after login:
+
+1. `GET /api/auth/me` → user identity and `isSuperAdmin`
+2. `GET /api/super-admin/me` → super-admin scopes
+3. `GET /api/super-admin/dashboard` → global KPI cards
+4. `GET /api/super-admin/tenants` → paginated tenant table
 
 ## Tenant Governance
 
