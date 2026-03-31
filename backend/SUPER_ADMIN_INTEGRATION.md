@@ -15,6 +15,22 @@ This backend now exposes a dedicated super-admin API namespace:
 - `GET /api/super-admin/analytics/overview`
 - `GET /api/super-admin/compliance/overview`
 - `GET /api/super-admin/audits/activity`
+- `GET /api/super-admin/billing/overview`
+- `GET /api/super-admin/tenants/:tenantId/billing`
+- `GET /api/super-admin/features`
+- `POST /api/super-admin/features`
+- `PATCH /api/super-admin/features/:featureId`
+- `GET /api/super-admin/tenants/:tenantId/features`
+- `PATCH /api/super-admin/tenants/:tenantId/features/:featureId`
+- `GET /api/super-admin/kyc/documents`
+- `PATCH /api/super-admin/kyc/documents/:id/status`
+- `GET /api/super-admin/usage/metrics`
+- `POST /api/super-admin/usage/metrics`
+- `GET /api/super-admin/audits/logins`
+- `GET /api/notifications`
+- `PATCH /api/notifications/read-all`
+- `PATCH /api/notifications/:notificationId/read`
+- `PATCH /api/notifications/:notificationId/dismiss`
 
 ## Access Model
 
@@ -77,4 +93,4 @@ Your super-admin frontend should call this backend directly, using a dedicated A
 Recommended env:
 
 - `SUPER_ADMIN_API_URL=https://<backend-domain>/api`
-- `SUPER_ADMIN_EMAILS=admin1@domain.com,admin2@domain.com`
+'SUPER_ADMIN_EMAILS=deacyvin@gmail.com'

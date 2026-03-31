@@ -16,6 +16,21 @@ import crypto from 'crypto';
 // Use lower salt rounds in development for faster login
 const SALT_ROUNDS = process.env.NODE_ENV === 'production' ? 10 : 6;
 
+async function logLoginAudit({ userId = null, req, successful }) {
+  try {
+    await prisma.loginAudit.create({
+      data: {
+        userId,
+        ipAddress: req.ip || req.headers['x-forwarded-for'] || null,
+        userAgent: req.headers['user-agent'] || null,
+        successful,
+      },
+    });
+  } catch (error) {
+    console.error('[LoginAudit] Failed to write login audit:', error.message);
+  }
+}
+
 /**
  * Local login with email/password (fallback)
  */
@@ -31,6 +46,7 @@ async function login(req, res, next) {
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
       console.log(`[Login] User not found: ${email}`);
+      await logLoginAudit({ req, successful: false });
       return res.status(401).json({ error: 'Invalid credentials' });
     }
     console.log(`[Login] User found, comparing password...`);
@@ -38,6 +54,7 @@ async function login(req, res, next) {
     const match = await bcrypt.compare(password, user.password || '');
     if (!match) {
       console.log(`[Login] Password mismatch for: ${email}`);
+      await logLoginAudit({ userId: user.id, req, successful: false });
       return res.status(401).json({ error: 'Invalid credentials' });
     }
     console.log(`[Login] Password matched, generating tokens...`);
@@ -57,6 +74,8 @@ async function login(req, res, next) {
 
     const duration = Date.now() - startTime;
     console.log(`[Login] ✅ Success for ${email} (${duration}ms)`);
+
+    await logLoginAudit({ userId: user.id, req, successful: true });
 
     res.json({
       accessToken,
@@ -191,6 +210,7 @@ async function register(req, res, next) {
         tenantId: tenant.id,
         email,
         name: `${firstName} ${lastName}`,
+        phone: phone || null,
         password: hashedPassword,
         role: role,
       },

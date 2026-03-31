@@ -28,5 +28,14 @@ process.on('SIGINT', gracefulShutdown);
 // Start server
 app.listen(PORT, () => {
   console.log(`Server listening on port ${PORT}`);
+  console.log(`Server listening on port ${PORT}`);
+console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+
+const parsed = (process.env.SUPER_ADMIN_EMAILS || '')
+  .split(',')
+  .map((s) => s.trim().toLowerCase())
+  .filter(Boolean);
+
+console.log('Super-admin whitelist at runtime:', parsed);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
 });

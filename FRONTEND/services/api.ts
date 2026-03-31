@@ -5,9 +5,8 @@ import Constants from 'expo-constants';
 // Get environment variables
 const getEnvVar = (key: string, defaultValue: string = ''): string => {
   // @ts-ignore - Expo injects these at build time
-  const value = Constants.expoConfig?.extra?.[key] || 
-                Constants.expoConfig?.extra?.eas?.[key] || 
-                process.env[key] || 
+  const value = process.env[key] ||
+                Constants.expoConfig?.extra?.[key] ||
                 defaultValue;
   
   console.log(`🔧 Environment variable ${key}:`, value);
@@ -57,10 +56,12 @@ const getBaseUrl = (): string => {
 };
 
 const API_BASE_URL = getBaseUrl();
+const ENABLE_MOCK_FALLBACK = getEnvVar('EXPO_PUBLIC_ENABLE_MOCK_FALLBACK', 'false').toLowerCase() === 'true';
 
 console.log('🌐 API Base URL:', API_BASE_URL);
 console.log('📱 Platform:', Platform.OS);
 console.log('🔧 Device:', Constants.isDevice ? 'Physical' : 'Simulator/Emulator');
+console.log('🧪 Mock fallback enabled:', ENABLE_MOCK_FALLBACK);
 
 // TypeScript interfaces
 export type TenantType = 'FAMILY' | 'BUSINESS';
@@ -256,6 +257,16 @@ class ApiService {
     return `${prefix}-${Math.random().toString(36).slice(2, 8)}`;
   }
 
+  private shouldUseMockFallback(context: string, error: any): boolean {
+    if (!ENABLE_MOCK_FALLBACK) {
+      console.error(`❌ ${context} failed (mock fallback disabled):`, error?.error || error?.message || error);
+      return false;
+    }
+
+    console.warn(`⚠️ ${context} falling back to mock data (EXPO_PUBLIC_ENABLE_MOCK_FALLBACK=true)`);
+    return true;
+  }
+
   public async request<T = any>(
     endpoint: string,
     options: RequestInit = {}
@@ -305,7 +316,15 @@ class ApiService {
         headers: response.headers
       });
 
-      const data = await response.json() as { error?: string };
+      const rawBody = await response.text();
+      let data: any = {};
+      if (rawBody) {
+        try {
+          data = JSON.parse(rawBody);
+        } catch {
+          data = { raw: rawBody };
+        }
+      }
 
       if (!response.ok) {
         console.error('❌ API Error Response:', {
@@ -315,7 +334,7 @@ class ApiService {
           data: data
         });
         throw {
-          error: data.error || 'An error occurred',
+          error: data.error || data.message || data.raw || 'An error occurred',
         } as ApiError;
       }
 
@@ -827,8 +846,10 @@ class ApiService {
     try {
       return await this.request<Category[]>('/categories');
     } catch (error) {
-      console.warn('getCategories falling back to mock categories');
-      return this.mockCategories;
+      if (this.shouldUseMockFallback('getCategories', error)) {
+        return this.mockCategories;
+      }
+      throw error;
     }
   }
 
@@ -843,8 +864,10 @@ class ApiService {
     try {
       return await this.request<PaymentMethod[]>('/payment-methods');
     } catch (error) {
-      console.warn('getPaymentMethods falling back to mock payment methods');
-      return this.mockPaymentMethods;
+      if (this.shouldUseMockFallback('getPaymentMethods', error)) {
+        return this.mockPaymentMethods;
+      }
+      throw error;
     }
   }
 
@@ -857,11 +880,13 @@ class ApiService {
     try {
       return await this.request<Transaction[]>(`/transactions${suffix}`);
     } catch (error) {
-      console.warn('getTransactions falling back to mock transactions');
-      const filtered = params.type
-        ? this.mockTransactions.filter(t => t.type === params.type)
-        : this.mockTransactions;
-      return filtered.slice(0, params.limit || filtered.length);
+      if (this.shouldUseMockFallback('getTransactions', error)) {
+        const filtered = params.type
+          ? this.mockTransactions.filter(t => t.type === params.type)
+          : this.mockTransactions;
+        return filtered.slice(0, params.limit || filtered.length);
+      }
+      throw error;
     }
   }
 
@@ -869,18 +894,20 @@ class ApiService {
     try {
       return await this.request<TransactionStats>('/transactions/stats');
     } catch (error) {
-      console.warn('getTransactionStats falling back to mock stats');
-      const income = this.mockTransactions
-        .filter(t => t.type === 'INCOME')
-        .reduce((sum, t) => sum + t.amount, 0);
-      const expenses = this.mockTransactions
-        .filter(t => t.type === 'EXPENSE')
-        .reduce((sum, t) => sum + t.amount, 0);
-      return {
-        totalIncome: income,
-        totalExpenses: expenses,
-        net: income - expenses,
-      };
+      if (this.shouldUseMockFallback('getTransactionStats', error)) {
+        const income = this.mockTransactions
+          .filter(t => t.type === 'INCOME')
+          .reduce((sum, t) => sum + t.amount, 0);
+        const expenses = this.mockTransactions
+          .filter(t => t.type === 'EXPENSE')
+          .reduce((sum, t) => sum + t.amount, 0);
+        return {
+          totalIncome: income,
+          totalExpenses: expenses,
+          net: income - expenses,
+        };
+      }
+      throw error;
     }
   }
 
@@ -920,26 +947,28 @@ class ApiService {
     try {
       return await this.request('/family/dashboard');
     } catch (error) {
-      console.warn('getDashboard falling back to mock data');
-      // Return mock dashboard data
-      return {
-        familyMembers: [
-          { id: '1', name: 'You', role: 'OWNER' }
-        ],
-        goals: [],
-        budgets: [],
-        categorySpending: [],
-        recentTransactions: this.mockTransactions.slice(0, 5),
-        summary: {
-          totalIncome: this.mockTransactions
-            .filter(t => t.type === 'INCOME')
-            .reduce((sum, t) => sum + t.amount, 0),
-          totalExpenses: this.mockTransactions
-            .filter(t => t.type === 'EXPENSE')
-            .reduce((sum, t) => sum + t.amount, 0),
-          balance: 0
-        }
-      };
+      if (this.shouldUseMockFallback('getDashboard', error)) {
+        // Return mock dashboard data
+        return {
+          familyMembers: [
+            { id: '1', name: 'You', role: 'OWNER' }
+          ],
+          goals: [],
+          budgets: [],
+          categorySpending: [],
+          recentTransactions: this.mockTransactions.slice(0, 5),
+          summary: {
+            totalIncome: this.mockTransactions
+              .filter(t => t.type === 'INCOME')
+              .reduce((sum, t) => sum + t.amount, 0),
+            totalExpenses: this.mockTransactions
+              .filter(t => t.type === 'EXPENSE')
+              .reduce((sum, t) => sum + t.amount, 0),
+            balance: 0
+          }
+        };
+      }
+      throw error;
     }
   }
 

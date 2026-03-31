@@ -29,6 +29,7 @@ import transfersRoutes from './routes/transfers.js';
 import lendingRoutes from './routes/lending.js';
 import vatRatesRoutes from './routes/vat-rates.js';
 import superAdminRoutes from './routes/super-admin.js';
+import notificationsRoutes from './routes/notifications.js';
 
 // Registered routes
 const app = express();
@@ -43,6 +44,9 @@ const buildCorsOrigins = () => {
     // Localhost for iOS simulator and web
     'http://localhost:4001',
     'http://localhost:8081',
+    // Vite / Vercel dev server (frontend)
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
     `http://localhost:${PORT}`,
 
     // Android emulator special IP
@@ -56,6 +60,8 @@ const buildCorsOrigins = () => {
     `http://${LOCAL_IP}:8081`,
     `http://${LOCAL_IP}:${PORT}`,
     `exp://${LOCAL_IP}:8081`,
+    // Allow vite served frontend via local network
+    `http://${LOCAL_IP}:5173`,
   ];
 
   const productionOrigins = [
@@ -159,6 +165,7 @@ app.use('/api/transfers', transfersRoutes);
 app.use('/api/lending', lendingRoutes);
 app.use('/api/vat-rates', vatRatesRoutes);
 app.use('/api/super-admin', superAdminRoutes);
+app.use('/api/notifications', notificationsRoutes);
 
 // 404 handler
 app.use('*', (req, res) => {

@@ -8,16 +8,33 @@ function getConfiguredSuperAdminEmails() {
     .filter(Boolean);
 }
 
+function normalizeEmail(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function normalizeUserId(value) {
+  if (value === null || value === undefined) return null;
+  const n = Number(value);
+  return Number.isNaN(n) ? null : n;
+}
+
 export async function isSuperAdminUser(userPayload) {
-  if (!userPayload?.id) return false;
+  if (!userPayload) return false;
 
   const configuredEmails = getConfiguredSuperAdminEmails();
-  if (userPayload.email && configuredEmails.includes(String(userPayload.email).toLowerCase())) {
+
+  // 1) Email whitelist check (normalized)
+  const payloadEmail = normalizeEmail(userPayload.email);
+  if (payloadEmail && configuredEmails.includes(payloadEmail)) {
     return true;
   }
 
+  // 2) DB-backed checks (role/tenant/permissions)
+  const userId = normalizeUserId(userPayload.id);
+  if (!userId) return false;
+
   const dbUser = await prisma.user.findUnique({
-    where: { id: userPayload.id },
+    where: { id: userId },
     select: {
       id: true,
       email: true,
@@ -29,12 +46,17 @@ export async function isSuperAdminUser(userPayload) {
 
   if (!dbUser) return false;
 
-  // Platform-level admin: ADMIN role that is not attached to a tenant
-  if (dbUser.role === 'ADMIN' && !dbUser.tenantId) {
+  const dbEmail = normalizeEmail(dbUser.email);
+  if (dbEmail && configuredEmails.includes(dbEmail)) {
     return true;
   }
 
-  // Optional explicit permission flag
+  // Platform-level admin: ADMIN role not attached to tenant
+  if (String(dbUser.role || '').toUpperCase() === 'ADMIN' && (dbUser.tenantId === null || dbUser.tenantId === undefined)) {
+    return true;
+  }
+
+  // Optional explicit permission flags
   if (dbUser.permissions && typeof dbUser.permissions === 'object') {
     const flags = dbUser.permissions;
     if (flags.superAdmin === true || flags.canManageTenants === true) {
@@ -48,9 +70,14 @@ export async function isSuperAdminUser(userPayload) {
 export async function requireSuperAdmin(req, res, next) {
   try {
     const allowed = await isSuperAdminUser(req.user);
+
     if (!allowed) {
-      return res.status(403).json({ error: 'Super admin access required' });
+      return res.status(403).json({
+        error: 'Super admin access required',
+        code: 'SUPER_ADMIN_REQUIRED',
+      });
     }
+
     next();
   } catch (err) {
     next(err);

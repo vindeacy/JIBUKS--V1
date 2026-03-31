@@ -14,6 +14,20 @@ enum TenantType {
   BUSINESS
 }
 
+enum FeatureToggleStatus {
+  ENABLED
+  DISABLED
+  BETA
+  DEPRECATED
+}
+
+enum KycDocumentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  UNDER_REVIEW
+}
+
 model Tenant {
   id                    Int                    @id @default(autoincrement())
   name                  String                 @unique
@@ -50,6 +64,9 @@ model Tenant {
   loans                 Loan[]
   vatRates              VatRate[]
   transactions          Transaction[]
+  kycDocuments          KycDocument[]
+  tenantFeatures        TenantFeature[]
+  usageMetrics          UsageMetric[]
 
   @@map("tenants")
 }
@@ -227,6 +244,9 @@ model User {
   recurringTransactions RecurringTransaction[]
   tenant                Tenant?                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   transfers             Transfer[]
+  notificationStates    NotificationState[]
+  loginAudits           LoginAudit[]
+  reviewedKycDocuments  KycDocument[]          @relation("KycReviewedBy")
   // Fixed Assets relations
   ownedAssets           FixedAsset[]           @relation("AssetOwner")
   createdAssets         FixedAsset[]           @relation("AssetCreator")
@@ -1245,4 +1265,111 @@ model PlatformAuditLog {
   @@index([entityType, entityId])
   @@index([createdAt])
   @@map("platform_audit_logs")
+}
+
+model LoginAudit {
+  id          Int       @id @default(autoincrement())
+  userId      Int?      @map("user_id")
+  ipAddress   String?   @map("ip_address")
+  userAgent   String?   @map("user_agent")
+  location    String?
+  successful  Boolean   @default(true)
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("login_audits")
+}
+
+model Feature {
+  id            Int                 @id @default(autoincrement())
+  name          String              @unique
+  description   String?
+  isGlobal      Boolean             @default(false) @map("is_global")
+  defaultStatus FeatureToggleStatus @default(DISABLED) @map("default_status")
+  createdAt     DateTime            @default(now()) @map("created_at")
+  updatedAt     DateTime            @updatedAt @map("updated_at")
+
+  tenantFeatures TenantFeature[]
+
+  @@map("features")
+}
+
+model TenantFeature {
+  id          Int                 @id @default(autoincrement())
+  tenantId    Int                 @map("tenant_id")
+  featureId   Int                 @map("feature_id")
+  status      FeatureToggleStatus @default(DISABLED)
+  createdAt   DateTime            @default(now()) @map("created_at")
+  updatedAt   DateTime            @updatedAt @map("updated_at")
+
+  tenant      Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  feature     Feature             @relation(fields: [featureId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, featureId])
+  @@index([tenantId])
+  @@index([featureId])
+  @@map("tenant_features")
+}
+
+model KycDocument {
+  id            Int               @id @default(autoincrement())
+  tenantId      Int               @map("tenant_id")
+  documentType  String            @map("document_type")
+  fileName      String            @map("file_name")
+  filePath      String            @map("file_path")
+  fileSize      BigInt            @map("file_size")
+  uploadDate    DateTime          @default(now()) @map("upload_date")
+  status        KycDocumentStatus @default(PENDING)
+  reviewedById  Int?              @map("reviewed_by_id")
+  reviewDate    DateTime?         @map("review_date")
+  notes         String?
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
+
+  tenant        Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  reviewedBy    User?             @relation("KycReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([status])
+  @@index([reviewedById])
+  @@map("kyc_documents")
+}
+
+model UsageMetric {
+  id           Int       @id @default(autoincrement())
+  tenantId     Int?      @map("tenant_id")
+  metricType   String    @map("metric_type")
+  value        BigInt
+  timestamp    DateTime
+  metadata     Json?
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  tenant       Tenant?   @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([metricType])
+  @@index([timestamp])
+  @@map("usage_metrics")
+}
+
+model NotificationState {
+  id              Int       @id @default(autoincrement())
+  userId          Int       @map("user_id")
+  notificationKey String    @map("notification_key")
+  isRead          Boolean   @default(false) @map("is_read")
+  readAt          DateTime? @map("read_at")
+  isDismissed     Boolean   @default(false) @map("is_dismissed")
+  dismissedAt     DateTime? @map("dismissed_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, notificationKey])
+  @@index([userId, isRead])
+  @@index([userId, isDismissed])
+  @@map("notification_states")
 }
