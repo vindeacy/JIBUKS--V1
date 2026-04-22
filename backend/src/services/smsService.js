@@ -43,16 +43,16 @@ export const sendSMS = async ({ mobile, message }) => {
 
         // Check if the response indicates success
         if (data.responses && data.responses[0] && data.responses[0]['response-code'] === 200) {
-            console.log('✅ SMS sent successfully. Message ID:', data.responses[0].messageid);
+            console.log(' SMS sent successfully. Message ID:', data.responses[0].messageid);
             return { success: true, messageId: data.responses[0].messageid };
         } else {
             const errorCode = data.responses?.[0]?.['response-code'] || 'unknown';
             const errorDesc = data.responses?.[0]?.['response-description'] || 'Unknown error';
-            console.error('❌ SMS failed:', errorCode, '-', errorDesc);
+            console.error(' SMS failed:', errorCode, '-', errorDesc);
             throw new Error(`SMS failed: ${errorCode} - ${errorDesc}`);
         }
     } catch (error) {
-        console.error('❌ Error sending SMS:', error.message);
+        console.error(' Error sending SMS:', error.message);
         console.error('Full error:', error);
         throw error;
     }
